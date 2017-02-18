@@ -62,7 +62,8 @@ def currated_tweet(tweet):
 async def handle_user(session, user):
     # Fetch user timeline
     tweets = await fetch_timeline(session, user)
-    return await publish_tweets(session, user, tweets)
+    if len(tweets) > 0:
+        await publish_tweets(session, user, tweets[::-1])
 
 
 # Fetch User timeline
@@ -71,7 +72,7 @@ async def fetch_timeline(session, user):
         url = TWITTER_TIMELINE_URL.format(user)
         last_id = USER_LAST_ID.get(user)
         if last_id:
-            url += '&since_id = {}'.format(last_id)
+            url += '&since_id={}'.format(last_id)
         # XXX: Handle pagination
         async with session.get(url, headers=TWITTER_HEADERS) as response:
             response.raise_for_status()
@@ -81,11 +82,13 @@ async def publish_tweets(session, user, tweets):
     print('Publish {} tweets for {}'.format(len(tweets), user))
     requests = []
 
-    first = True
     for tweet in tweets:
-        if first:
+        if USER_LAST_ID.get(user, '0') < tweet['id_str']:
             USER_LAST_ID[user] = tweet['id_str']
-            first = False
+
+        if 'retweeted_status' in tweet:
+            # Skip retweets
+            continue
 
         proper_tweet = currated_tweet(tweet)
         requests.append({
@@ -109,7 +112,7 @@ async def publish_tweets(session, user, tweets):
                                   headers=KINTO_HEADERS,
                                   auth=KINTO_BASIC_AUTH)
     response.raise_for_status()
-    print("Published", user, await response.json())
+    print("Published", user)
 
 
 async def main(loop):
@@ -127,8 +130,7 @@ async def main(loop):
                 # Grab the timeline
                 tasks.append(handle_user(session, user))
 
-            tweets = await asyncio.gather(*tasks)
-            print(tweets)
+            await asyncio.gather(*tasks)
             await asyncio.sleep(FREQUENCY_SECONDS)
 
 
