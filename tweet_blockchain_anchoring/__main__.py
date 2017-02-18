@@ -33,6 +33,7 @@ KINTO_HEADERS = {'Content-Type': 'application/json'}
 
 USER_LAST_ID = {}
 
+
 async def init_kinto_bucket_and_collections(session):
     bucket_url = '{}/buckets/{}'.format(KINTO_SERVER_URL, BUCKET_ID)
     print("Setting up {}".format(bucket_url))
@@ -70,7 +71,7 @@ async def handle_user(session, user):
     tweets = await fetch_timeline(session, user)
     if len(tweets) > 0:
         anchors = await publish_tweets(session, user, tweets[::-1])
-        await anchor_tweets(session, anchors)
+        await anchor_tweets(session, user, anchors)
 
 
 # Fetch User timeline
@@ -130,18 +131,66 @@ async def publish_tweets(session, user, tweets):
     print("Published", user)
     return anchors
 
-async def anchor_tweets(session, anchors):
+async def anchor_tweets(session, user, anchors):
     tasks = []
+    requests = []
     for anchor in anchors:
-        url = '{}/anchor'.format(WOLEET_SERVER)
-        tasks.append(session.post(url,
-                                  data=json.dumps(anchor),
-                                  headers=WOLEET_HEADERS))
+        search_url = '{}/anchorids?hash={}'.format(WOLEET_SERVER, anchor['hash'])
+        result = await session.get(search_url)
+        body = await result.json()
+        if body['totalElements'] == 0:
+            url = '{}/anchor'.format(WOLEET_SERVER)
+            tasks.append(session.post(url,
+                                      data=json.dumps(anchor),
+                                      headers=WOLEET_HEADERS))
+        else:
+            requests.append({
+                "path": "/buckets/{}/collections/{}/records/{}".format(
+                    BUCKET_ID, user, anchor['hash']),
+                "body": {
+                    "data": {
+                        "receipts": {
+                            "id": body['content'][0]
+                        }
+                    }
+                }
+            })
 
     responses = await asyncio.gather(*tasks)
     for response in responses:
         response.raise_for_status()
+        body = await response.json()
+        requests.append({
+            "path": "/buckets/{}/collections/{}/records/{}".format(
+                BUCKET_ID, user, response['hash']),
+            "body": {
+                "data": {
+                    "receipts": {
+                        "id": response['id']
+                    }
+                }
+            }
+        })
         response.close()
+
+    request_body = {
+        "defaults": {
+            "method": "PATCH",
+        },
+        "requests": requests
+    }
+    batch_url = '{}/batch'.format(KINTO_SERVER_URL)
+    response = await session.post(batch_url, data=json.dumps(request_body),
+                                  headers=KINTO_HEADERS,
+                                  auth=KINTO_BASIC_AUTH)
+    response.raise_for_status()
+    body = await response.json()
+    response.close()
+    anchors = []
+    for resp in body['responses']:
+        if resp['status'] >= 400:
+            raise ValueError('Record could not be updated: {}'.format(resp['body']))
+
 
 
 async def main(loop):
