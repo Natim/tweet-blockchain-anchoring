@@ -31,6 +31,11 @@ $(INSTALL_STAMP): $(PYTHON) setup.py
 	$(VENV)/bin/pip install -Ue .
 	touch $(INSTALL_STAMP)
 
+install-dev: $(DEV_STAMP)
+$(DEV_STAMP): $(PYTHON)
+	$(VENV)/bin/pip install -U flake8
+	touch $(DEV_STAMP)
+
 virtualenv: $(PYTHON)
 $(PYTHON):
 	$(VIRTUALENV) $(VENV)

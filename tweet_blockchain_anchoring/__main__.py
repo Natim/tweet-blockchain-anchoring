@@ -45,6 +45,7 @@ async def init_kinto_bucket_and_collections(session):
         print("Setting up {}".format(collection_url))
         response = await session.put(collection_url, headers=KINTO_HEADERS, auth=KINTO_BASIC_AUTH)
         response.raise_for_status()
+        response.close()
 
 
 def canonical_json(payload):
@@ -118,6 +119,7 @@ async def publish_tweets(session, user, tweets):
                                   auth=KINTO_BASIC_AUTH)
     response.raise_for_status()
     body = await response.json()
+    response.close()
     anchors = []
     for resp in body['responses']:
         if resp['status'] >= 400:
@@ -138,6 +140,7 @@ async def anchor_tweets(session, anchors):
     responses = await asyncio.gather(*tasks)
     for response in responses:
         response.raise_for_status()
+        response.close()
 
 
 async def main(loop):
