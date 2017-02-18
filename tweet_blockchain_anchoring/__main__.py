@@ -7,16 +7,20 @@ import os
 
 # ENV config
 #
+# - WOLEET_BEARER_TOKEN: mandatory
 # - TWITTER_BEARER_TOKEN: mandatory
 # - KINTO_SERVER: default to `https://kinto.dev.mozaws.net/v1`
 # - KINTO_AUTH: default to `user:pass`
-#
 #
 
 BUCKET_ID = "tweet_blockchain_anchoring"
 FREQUENCY_SECONDS = 10
 FOLLOWED_USERS = ["JLMelenchon", "MarCharlott", "benoithamon", "yjadot", "EmmanuelMacron",
                   "FrancoisFillon", "MLP_officiel", "f_philippot"]
+
+WOLEET_SERVER = 'https://api-preprod.woleet.io/v1'
+WOLEET_HEADERS = {'Authorization': 'Bearer {}'.format(os.getenv('WOLEET_BEARER_TOKEN')),
+                  'Content-Type': 'application/json'}
 
 KINTO_SERVER_URL = os.getenv('KINTO_SERVER', 'https://kinto.dev.mozaws.net/v1').rstrip('/')
 KINTO_AUTH = os.getenv('KINTO_AUTH', 'user:pass').split(':', 1)
@@ -63,7 +67,8 @@ async def handle_user(session, user):
     # Fetch user timeline
     tweets = await fetch_timeline(session, user)
     if len(tweets) > 0:
-        await publish_tweets(session, user, tweets[::-1])
+        anchors = await publish_tweets(session, user, tweets[::-1])
+        await anchor_tweets(session, anchors)
 
 
 # Fetch User timeline
@@ -112,7 +117,27 @@ async def publish_tweets(session, user, tweets):
                                   headers=KINTO_HEADERS,
                                   auth=KINTO_BASIC_AUTH)
     response.raise_for_status()
+    body = await response.json()
+    anchors = []
+    for resp in body['responses']:
+        if resp['status'] >= 400:
+            raise ValueError('Record could not be created: {}'.format(resp['body']))
+        anchors.append({'name': '{}:{}'.format(user, resp['body']['data']['tweet']['id']),
+                        'hash': resp['body']['data']['id']})
     print("Published", user)
+    return anchors
+
+async def anchor_tweets(session, anchors):
+    tasks = []
+    for anchor in anchors:
+        url = '{}/anchor'.format(WOLEET_SERVER)
+        tasks.append(session.post(url,
+                                  data=json.dumps(anchor),
+                                  headers=WOLEET_HEADERS))
+
+    responses = await asyncio.gather(*tasks)
+    for response in responses:
+        response.raise_for_status()
 
 
 async def main(loop):
