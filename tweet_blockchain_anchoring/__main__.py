@@ -38,6 +38,7 @@ async def init_kinto_bucket_and_collections(session):
     print("Setting up {}".format(bucket_url))
     response = await session.put(bucket_url, headers=KINTO_HEADERS, auth=KINTO_BASIC_AUTH)
     response.raise_for_status()
+    response.close()
 
     for collection in FOLLOWED_USERS:
         collection_url = '{}/buckets/{}/collections/{}'.format(
