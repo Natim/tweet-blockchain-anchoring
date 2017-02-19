@@ -162,11 +162,11 @@ async def anchor_tweets(session, user, anchors):
         body = await response.json()
         requests.append({
             "path": "/buckets/{}/collections/{}/records/{}".format(
-                BUCKET_ID, user, response['hash']),
+                BUCKET_ID, user, body['hash']),
             "body": {
                 "data": {
                     "receipts": {
-                        "id": response['id']
+                        "id": body['id']
                     }
                 }
             }
