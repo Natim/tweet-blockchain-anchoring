@@ -3,7 +3,10 @@ import async_timeout
 import asyncio
 import hashlib
 import json
+import logging
 import os
+
+logger = logging.getLogger('tweet_blockchain_anchoring')
 
 # ENV config
 #
@@ -192,24 +195,26 @@ async def anchor_tweets(session, user, anchors):
             raise ValueError('Record could not be updated: {}'.format(resp['body']))
 
 
-
 async def main(loop):
     async with aiohttp.ClientSession(loop=loop) as session:
         print("Bot starting...")
         await init_kinto_bucket_and_collections(session)
 
         while True:
-            # Every FREQUENCY_SECONDS seconds
-            print("Polling for changes.")
+            try:
+                # Every FREQUENCY_SECONDS seconds
+                print("Polling for changes.")
 
-            tasks = []
-            # For each followed account
-            for user in FOLLOWED_USERS:
-                # Grab the timeline
-                tasks.append(handle_user(session, user))
+                tasks = []
+                # For each followed account
+                for user in FOLLOWED_USERS:
+                    # Grab the timeline
+                    tasks.append(handle_user(session, user))
 
-            await asyncio.gather(*tasks)
-            await asyncio.sleep(FREQUENCY_SECONDS)
+                await asyncio.gather(*tasks)
+                await asyncio.sleep(FREQUENCY_SECONDS)
+            except:
+                logger.exception()
 
 
 loop = asyncio.get_event_loop()
