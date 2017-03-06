@@ -21,7 +21,7 @@ FREQUENCY_SECONDS = 10
 FOLLOWED_USERS = ["JLMelenchon", "MarCharlott", "benoithamon", "yjadot", "EmmanuelMacron",
                   "FrancoisFillon", "MLP_officiel", "f_philippot"]
 
-WOLEET_SERVER = 'https://api-preprod.woleet.io/v1'
+WOLEET_SERVER = 'https://api.woleet.io/v1'
 WOLEET_HEADERS = {'Authorization': 'Bearer {}'.format(os.getenv('WOLEET_BEARER_TOKEN')),
                   'Content-Type': 'application/json'}
 
@@ -70,10 +70,16 @@ def currated_tweet(tweet):
 
 async def handle_user(session, user):
     # Fetch user timeline
+    print("Fetch {} timeline on Twitter".format(user))
     tweets = await fetch_timeline(session, user)
-    if len(tweets) > 0:
+    nb_tweets = len(tweets)
+    print("{} timeline fetched: {} tweets\n".format(user, nb_tweets))
+    if nb_tweets > 0:
+        print("Publish {} tweets".format(user))
         anchors = await publish_tweets(session, user, tweets[::-1])
+        print("{} tweets published. Anchoring".format(user))
         await anchor_tweets(session, user, anchors)
+        print("{}'s tweets anchored".format(user))
 
 
 # Fetch User timeline
@@ -142,9 +148,23 @@ async def anchor_tweets(session, user, anchors):
             body = await result.json()
         if body['totalElements'] == 0:
             url = '{}/anchor'.format(WOLEET_SERVER)
-            tasks.append(session.post(url,
-                                      data=json.dumps(anchor),
-                                      headers=WOLEET_HEADERS))
+            print('Starting a POST on woleet: {}'.format(anchor['hash']))
+            async with session.post(url, data=json.dumps(anchor),
+                                    headers=WOLEET_HEADERS) as response:
+                response.raise_for_status()
+                body = await response.json()
+                print('Received a {} from Woleet: {}'.format(response.status, anchor['hash']))
+                requests.append({
+                    "path": "/buckets/{}/collections/{}/records/{}".format(
+                        BUCKET_ID, user, body['hash']),
+                    "body": {
+                        "data": {
+                            "receipts": {
+                                "id": body['id']
+                            }
+                        }
+                    }
+                })
         else:
             requests.append({
                 "path": "/buckets/{}/collections/{}/records/{}".format(
@@ -157,23 +177,6 @@ async def anchor_tweets(session, user, anchors):
                     }
                 }
             })
-
-    responses = await asyncio.gather(*tasks)
-    for response in responses:
-        response.raise_for_status()
-        body = await response.json()
-        requests.append({
-            "path": "/buckets/{}/collections/{}/records/{}".format(
-                BUCKET_ID, user, body['hash']),
-            "body": {
-                "data": {
-                    "receipts": {
-                        "id": body['id']
-                    }
-                }
-            }
-        })
-        response.close()
 
     request_body = {
         "defaults": {
@@ -213,7 +216,7 @@ async def main(loop):
                 await asyncio.gather(*tasks)
                 await asyncio.sleep(FREQUENCY_SECONDS)
             except:
-                logger.exception()
+                logger.exception("Exception in the loop")
 
 
 loop = asyncio.get_event_loop()
