@@ -40,17 +40,16 @@ USER_LAST_ID = {}
 async def init_kinto_bucket_and_collections(session):
     bucket_url = '{}/buckets/{}'.format(KINTO_SERVER_URL, BUCKET_ID)
     print("Setting up {}".format(bucket_url))
-    response = await session.put(bucket_url, headers=KINTO_HEADERS, auth=KINTO_BASIC_AUTH)
-    response.raise_for_status()
-    response.close()
+    async with session.put(bucket_url, headers=KINTO_HEADERS, auth=KINTO_BASIC_AUTH) as response:
+        response.raise_for_status()
 
     for collection in FOLLOWED_USERS:
         collection_url = '{}/buckets/{}/collections/{}'.format(
             KINTO_SERVER_URL, BUCKET_ID, collection)
         print("Setting up {}".format(collection_url))
-        response = await session.put(collection_url, headers=KINTO_HEADERS, auth=KINTO_BASIC_AUTH)
-        response.raise_for_status()
-        response.close()
+        async with session.put(collection_url, headers=KINTO_HEADERS,
+                               auth=KINTO_BASIC_AUTH) as response:
+            response.raise_for_status()
 
 
 def canonical_json(payload):
@@ -119,12 +118,12 @@ async def publish_tweets(session, user, tweets):
         "requests": requests
     }
     batch_url = '{}/batch'.format(KINTO_SERVER_URL)
-    response = await session.post(batch_url, data=json.dumps(request_body),
-                                  headers=KINTO_HEADERS,
-                                  auth=KINTO_BASIC_AUTH)
-    response.raise_for_status()
-    body = await response.json()
-    response.close()
+    async with session.post(batch_url, data=json.dumps(request_body),
+                            headers=KINTO_HEADERS,
+                            auth=KINTO_BASIC_AUTH) as response:
+        response.raise_for_status()
+        body = await response.json()
+
     anchors = []
     for resp in body['responses']:
         if resp['status'] >= 400:
@@ -139,8 +138,8 @@ async def anchor_tweets(session, user, anchors):
     requests = []
     for anchor in anchors:
         search_url = '{}/anchorids?hash={}'.format(WOLEET_SERVER, anchor['hash'])
-        result = await session.get(search_url)
-        body = await result.json()
+        async with session.get(search_url) as result:
+            body = await result.json()
         if body['totalElements'] == 0:
             url = '{}/anchor'.format(WOLEET_SERVER)
             tasks.append(session.post(url,
@@ -183,12 +182,12 @@ async def anchor_tweets(session, user, anchors):
         "requests": requests
     }
     batch_url = '{}/batch'.format(KINTO_SERVER_URL)
-    response = await session.post(batch_url, data=json.dumps(request_body),
-                                  headers=KINTO_HEADERS,
-                                  auth=KINTO_BASIC_AUTH)
-    response.raise_for_status()
-    body = await response.json()
-    response.close()
+    async with session.post(batch_url, data=json.dumps(request_body),
+                            headers=KINTO_HEADERS,
+                            auth=KINTO_BASIC_AUTH) as response:
+        response.raise_for_status()
+        body = await response.json()
+
     anchors = []
     for resp in body['responses']:
         if resp['status'] >= 400:
